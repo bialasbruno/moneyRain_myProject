@@ -1,0 +1,7 @@
+ENVIRONMENT=development
+DEV_AUTH_BYPASS=true
+OWNER_EMAIL=owner@example.invalid
+CF_ACCESS_TEAM_DOMAIN=example.cloudflareaccess.com
+CF_ACCESS_AUD=replace-with-access-audience
+MARKET_DATA_API_KEY=replace-locally-only
+

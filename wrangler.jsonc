@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "money-rain",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-07-20",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "money-rain-dev",
+      "database_id": "REPLACE_WITH_PREVIEW_DATABASE_ID",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "vars": {
+    "ENVIRONMENT": "development",
+    "DEV_AUTH_BYPASS": "false",
+  },
+}

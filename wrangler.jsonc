@@ -6,25 +6,29 @@
 	"d1_databases": [
 		{
 			"binding": "DB",
-			"database_name": "money-rain-dev",
-			"database_id": "REPLACE_WITH_PREVIEW_DATABASE_ID",
-			"migrations_dir": "migrations",
-		},
-		{
-			"binding": "money_rain_production",
 			"database_name": "money-rain-production",
 			"database_id": "5714974d-5fd1-4d8d-9831-0d2b0a49107d",
-			"remote": true
-		},
-		{
-			"binding": "money_rain_preview",
-			"database_name": "money-rain-preview",
-			"database_id": "71dad663-40f5-46a0-9803-c6699db22705",
-			"remote": true
+			"migrations_dir": "migrations",
 		},
 	],
 	"vars": {
 		"ENVIRONMENT": "production",
 		"DEV_AUTH_BYPASS": "false",
+	},
+	"env": {
+		"preview": {
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "money-rain-preview",
+					"database_id": "71dad663-40f5-46a0-9803-c6699db22705",
+					"migrations_dir": "migrations",
+				},
+			],
+			"vars": {
+				"ENVIRONMENT": "preview",
+				"DEV_AUTH_BYPASS": "false",
+			},
+		},
 	},
 }

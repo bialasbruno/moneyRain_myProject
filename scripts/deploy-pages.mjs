@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
-const projectName = 'money-rain';
+const projectName = 'money-rain-essa';
 const pagesToken = process.env.PAGES_API_TOKEN;
 
 if (!pagesToken) {
@@ -38,7 +38,9 @@ function run(args, captureOutput = false) {
 }
 
 const projects = JSON.parse(run(['pages', 'project', 'list', '--json'], true));
-const projectExists = projects.some((project) => project.name === projectName);
+const projectExists = projects.some(
+  (project) => project['Project Name'] === projectName || project.name === projectName,
+);
 
 if (!projectExists) {
   console.log(`Creating Cloudflare Pages project "${projectName}"...`);

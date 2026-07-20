@@ -28,11 +28,20 @@ Połącz repozytorium z Cloudflare Pages:
 
 - build command: `npm run build`
 - output directory: `dist`
+- deploy command, jeśli panel go wymaga: `npm run deploy`
 - root directory: repozytorium
 - Functions zostaną wykryte z `functions/`
 - binding D1: `DB`
 
 Ustaw aktualny `database_id` zamiast wartości `REPLACE_*` w konfiguracji używanej przez dane środowisko. Podłącz własną subdomenę po pierwszym udanym wdrożeniu.
+
+Jeżeli korzystasz z klasycznej integracji Git w Cloudflare Pages, usuń niestandardową komendę deploy — Pages opublikuje katalog `dist` automatycznie. Jeżeli używany ekran wymaga osobnej komendy deploy, ustaw dokładnie:
+
+```bash
+npm run deploy
+```
+
+Skrypt uruchamia `wrangler pages deploy dist --project-name money-rain`. Nie ustawiaj `npx wrangler deploy`; ta komenda wdraża Workers i nie obsługuje katalogu `functions/` jako Pages Functions.
 
 ## 3. Zmienne i sekrety
 

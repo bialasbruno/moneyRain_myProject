@@ -16,6 +16,15 @@ npx wrangler pages dev dist --d1 DB=money-rain-dev
 
 W `.dev.vars` pozostaw `ENVIRONMENT=development` i `DEV_AUTH_BYPASS=true` wyłącznie lokalnie. Plik jest ignorowany przez Git. Sam frontend, bez Functions, można uruchomić komendą `npm run dev`; formularze wymagają jednak pełnego środowiska Pages powyżej.
 
+Ręczne wdrożenie istniejącego projektu Pages:
+
+```bash
+npm run build
+npm run deploy
+```
+
+Nie używaj `wrangler deploy` — jest to komenda projektu Workers. Dla Pages właściwą komendą jest `wrangler pages deploy`.
+
 Opcjonalne, wyłącznie fikcyjne dane:
 
 ```bash

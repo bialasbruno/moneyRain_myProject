@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { calculateBond, yearFraction, type BondLotInput } from '../../src/domain/bonds';
+import {
+  calculateBond,
+  calculateBondLive,
+  yearFraction,
+  type BondLotInput,
+} from '../../src/domain/bonds';
 
 const lot = (patch: Partial<BondLotInput> = {}): BondLotInput => ({
   purchaseDate: '2023-01-01',
@@ -60,5 +65,28 @@ describe('bond engine', () => {
     const result = calculateBond(lot(), '2025-01-01');
     expect(result.missingRate).toBe(true);
     expect(result.accruedInterestPln).toBe('0');
+  });
+
+  it('accrues interest continuously during the day', () => {
+    const input = lot({
+      maturityDate: '2027-01-01',
+      periods: [
+        { id: 'a', startDate: '2026-01-01', endDate: '2027-01-01', annualRatePercent: '10' },
+      ],
+    });
+    const midnight = calculateBondLive(input, new Date('2026-07-20T00:00:00Z'));
+    const noon = calculateBondLive(input, new Date('2026-07-20T12:00:00Z'));
+
+    expect(Number(noon.accrualPerSecondPln)).toBeCloseTo(100 / 365 / 86_400, 12);
+    expect(Number(noon.currentValuePln) - Number(midnight.currentValuePln)).toBeCloseTo(
+      100 / 365 / 2,
+      8,
+    );
+  });
+
+  it('does not fabricate a live rate when the current period is missing', () => {
+    const result = calculateBondLive(lot(), new Date('2025-07-20T12:00:00Z'));
+    expect(result.missingRate).toBe(true);
+    expect(result.accrualPerSecondPln).toBe('0');
   });
 });

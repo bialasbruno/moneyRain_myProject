@@ -2,26 +2,6 @@
 
 Wszystkie kwoty, kursy, ceny, ilości i stopy są przechowywane jako tekst dziesiętny i obliczane przez `decimal.js` z precyzją 40 cyfr. SQLite nie wykonuje działań pieniężnych na `REAL`.
 
-## ETF — FIFO
-
-Transakcje są sortowane po `executed_at`, a przy remisie po `id`. Zakup tworzy partię:
-
-`koszt partii PLN = ilość × cena × kurs FX + opłata × kurs FX`
-
-Opłata zakupu zwiększa koszt jednostki. Sprzedaż zużywa najstarsze partie; jej opłata pomniejsza wpływy:
-
-`wynik zrealizowany = wpływ netto sprzedaży − koszt FIFO sprzedanych jednostek`
-
-`wartość rynkowa = pozostała ilość × bieżąca cena × jawny kurs FX`
-
-`wynik niezrealizowany = wartość rynkowa − koszt pozostałych partii`
-
-`wynik całkowity = zrealizowany + niezrealizowany + dywidendy netto`
-
-Stopa zwrotu dzieli wynik całkowity przez łączny koszt zakupów i ich opłat. Jest to prosta stopa dla całej historii, nie TWR ani XIRR.
-
-Przykład: zakup 10 jednostek po 100 EUR przy FX 4,00 i opłacie 5 EUR kosztuje 4 020 PLN. Sprzedaż 4 jednostek po 120 EUR, FX 4,10 i opłata 2 EUR daje 1 959,80 PLN wpływu netto. Koszt FIFO sprzedanej części to 1 608 PLN, więc wynik zrealizowany wynosi 351,80 PLN.
-
 ## Obligacje
 
 Dla okresu oprocentowania:
@@ -35,6 +15,14 @@ Dla okresu oprocentowania:
 Przy `CAPITALIZE` odsetki zakończonego okresu zwiększają bazę następnego okresu. Przy `PAY_OUT` są wynikiem wypłaconym, ale nie zwiększają wartości bieżącej. Niepełny okres nalicza odsetki tylko do daty wyceny. Po dacie wykupu naliczanie kończy się.
 
 Jeżeli żadna podana stopa nie pokrywa bieżącej daty, `missingRate=true`. Silnik nie prognozuje inflacji ani stopy NBP i nie dopisuje wymyślonych odsetek.
+
+### Licznik na żywo
+
+Serwer liczy ekonomiczną wartość obligacji na początku bieżącego i następnego dnia. Różnica obejmuje zarówno wartość pozostającą w obligacji, jak i odsetki wypłacane na granicy okresu:
+
+`tempo na sekundę = max(wartość ekonomiczna jutro − wartość ekonomiczna dziś, 0) / 86 400`
+
+Do dziennej wyceny dodawana jest część odpowiadająca sekundom, które upłynęły od północy UTC. API zwraca punkt bazowy `asOf` oraz `accrualPerSecondPln`; przeglądarka aktualizuje widok co sekundę między pełnymi odświeżeniami danych. Jeżeli brakuje stopy albo obligacja jest po wykupie, tempo wynosi zero.
 
 ## Progresja
 

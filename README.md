@@ -1,6 +1,6 @@
 # Money Rain — Droga do Miliona
 
-Prywatna aplikacja React + Cloudflare Pages Functions do ręcznego prowadzenia ETF-ów i polskich detalicznych obligacji skarbowych. Dashboard łączy spokojną analizę finansową z uczciwą gamifikacją celu 1 000 000 PLN. Nie łączy się z XTB, nie scrapuje xStation i nie przechowuje danych brokera.
+Prywatna aplikacja React + Cloudflare Pages Functions do ręcznego prowadzenia polskich detalicznych obligacji skarbowych. Dashboard pokazuje narastanie odsetek co sekundę i łączy je z gamifikacją celu 1 000 000 PLN. Nie łączy się z brokerem i nie prognozuje przyszłego oprocentowania.
 
 ## Lokalnie
 
@@ -46,9 +46,8 @@ npm run test:e2e
 
 - SPA w `src/`, wynik w `dist/`.
 - Prywatne API w `functions/api/[[path]].ts`; D1 jest dostępne tylko przez binding `DB`.
-- Wspólna domena finansowa w `src/domain/` używa `decimal.js`.
+- Wspólna domena finansowa w `src/domain/` używa `decimal.js`; dzienny przyrost obligacji jest interpolowany do dokładnego tempa na sekundę.
 - Dwie wersjonowane migracje w `migrations/`.
-- Dostawcy cen: ręczny i Twelve Data, wyłącznie po stronie serwera.
 - Scena 3D jest lazy-loaded; bez WebGL lub przy wyłączonych efektach działa fallback CSS/SVG.
 
 Więcej: [architektura](docs/architecture.md), [obliczenia](docs/calculations.md), [bezpieczeństwo](docs/security.md), [wdrożenie](docs/cloudflare-deployment.md).

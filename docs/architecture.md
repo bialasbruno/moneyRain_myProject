@@ -6,25 +6,21 @@ Przeglądarka komunikuje się tylko z `/api/*` same-origin. Middleware weryfikuj
 
 Warstwy:
 
-1. `src/domain` — czyste obliczenia Decimal: FIFO, obligacje, level/rangi.
-2. `functions/lib` — autoryzacja, walidacja, odpowiedzi i adaptery notowań.
+1. `src/domain` — czyste obliczenia Decimal: obligacje, naliczanie sekundowe, level/rangi.
+2. `functions/lib` — autoryzacja, walidacja i odpowiedzi HTTP.
 3. `functions/api/[[path]].ts` — repozytorium D1 oraz endpointy.
 4. `src/pages` — formularze React Hook Form + Zod i dane TanStack Query.
 5. `src/components` — prezentacja oraz lazy-loaded React Three Fiber.
 
-## Notowania
+## Wycena obligacji na żywo
 
-`QuoteProvider` oddziela aplikację od dostawcy. `ManualQuoteProvider` jest zawsze dostępny. `TwelveDataQuoteProvider` korzysta z serwerowego nagłówka `Authorization`; klucz nie jest zwracany ani logowany. Cache D1 ma TTL około 60 s. Jeżeli świeże pobranie nie powiedzie się, API zwraca ostatnią cenę jako `STALE`, a wartość portfela nie spada przez sam błąd dostawcy.
+Dashboard agreguje wyłącznie partie obligacji. Każda wycena zwraca `accrualPerSecondPln`, wyznaczone z dokładnej zmiany ekonomicznej między kolejnymi dniami. Dzięki temu granice kapitalizacji i wypłaty odsetek nie tworzą sztucznych skoków wyniku.
 
-Polling frontendu działa maksymalnie raz na 60 s, zatrzymuje się w ukrytej karcie i ma wykładniczy backoff. Statusy to `LIVE`, `DELAYED`, `CLOSED`, `STALE`, `MANUAL`; UI nie nazywa ceny „na żywo”, jeżeli dostawca tego nie potwierdza.
-
-## FX
-
-Każda transakcja zapisuje jawny `fx_rate_to_pln`. Bieżąca wycena instrumentu w obcej walucie używa ostatniego zapisanego kursu tego instrumentu. Brak kursu daje jawne ostrzeżenie i zerową wycenę PLN — nie następuje ciche utożsamienie EUR/USD/GBP z PLN. Kolejnym adapterem może być serwerowy `FxProvider` bez zmiany modelu transakcji.
+Frontend pobiera nowy punkt bazowy co 60 s i pomiędzy pobraniami aktualizuje licznik lokalnie co sekundę. Ukrycie karty zatrzymuje cykliczne pobieranie API, a po powrocie czas jest przeliczany względem serwerowego `asOf`.
 
 ## Import
 
-JSON import jest dwuetapowy: walidacja + podgląd, następnie osobne potwierdzenie. Import dodaje rekordy i nie wykonuje `REPLACE`. Przygotowany model instrumentu (`provider_symbol`, ISIN, MIC, giełda) pozwala później dodać parser CSV jako osobny adapter.
+JSON import jest dwuetapowy: walidacja + podgląd, następnie osobne potwierdzenie. Import dodaje rekordy i nie wykonuje `REPLACE`. Historyczne tabele innych klas aktywów pozostają w schemacie dla zgodności eksportów, ale nie są uwzględniane przez dashboard ani dostępne w interfejsie.
 
 ## Gamifikacja
 

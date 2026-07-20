@@ -1,36 +1,36 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity,
   ArrowRight,
-  Clock3,
+  CalendarClock,
+  Coins,
   Gem,
+  Gauge,
   Landmark,
+  Radio,
   RefreshCw,
-  Sparkles,
   TrendingUp,
   TriangleAlert,
-  WalletCards,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { api } from '../lib/api';
-import { formatPercent, formatPln } from '../domain/money';
-import type { DashboardData } from '../types';
-import { usePageVisible } from '../hooks/useVisibility';
-import { AnimatedValue } from '../components/AnimatedValue';
 import { CapitalCore } from '../components/CapitalCore';
-import { Card, StatusBadge } from '../components/Ui';
+import { Card } from '../components/Ui';
+import { D } from '../domain/money';
+import { formatPercent, formatPln, formatPrecisePln } from '../domain/money';
+import { liveAccruedValue, useLiveClock } from '../hooks/useLiveAccrual';
+import { usePageVisible } from '../hooks/useVisibility';
+import { api } from '../lib/api';
+import type { DashboardData } from '../types';
 
 const emptyDashboard: DashboardData = {
   asOf: new Date().toISOString(),
   totalValuePln: '0',
   totalProfitPln: '0',
   returnPercent: '0',
-  etfValuePln: '0',
   bondsValuePln: '0',
+  bondPrincipalPln: '0',
+  bondPurchaseCostPln: '0',
   accruedInterestPln: '0',
-  dailyChangePln: null,
-  allocation: { etfPercent: '0', bondsPercent: '0' },
-  quotes: [],
+  accrualPerSecondPln: '0',
   bonds: [],
   game: {
     currentLevel: 0,
@@ -59,6 +59,7 @@ const emptyDashboard: DashboardData = {
 
 export function DashboardPage() {
   const visible = usePageVisible();
+  const timestamp = useLiveClock();
   const query = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api<DashboardData>('/dashboard'),
@@ -69,16 +70,42 @@ export function DashboardPage() {
     retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 30_000),
   });
   const data = query.data ?? emptyDashboard;
-  const progress = Number(data.game.millionProgressPercent);
-  const positive = Number(data.totalProfitPln) >= 0;
-  const primaryQuote = data.quotes[0];
+  const liveValue = liveAccruedValue(
+    data.totalValuePln,
+    data.accrualPerSecondPln,
+    data.asOf,
+    timestamp,
+  );
+  const liveProfit = liveAccruedValue(
+    data.totalProfitPln,
+    data.accrualPerSecondPln,
+    data.asOf,
+    timestamp,
+  );
+  const liveInterest = liveAccruedValue(
+    data.accruedInterestPln,
+    data.accrualPerSecondPln,
+    data.asOf,
+    timestamp,
+  );
+  const progress = Math.min(100, D(liveValue).div(1_000_000).mul(100).toNumber());
+  const returnPercent = D(data.bondPurchaseCostPln).eq(0)
+    ? '0'
+    : D(liveProfit).div(data.bondPurchaseCostPln).mul(100).toString();
+  const positive = D(liveProfit).gte(0);
+  const dailyAccrual = D(data.accrualPerSecondPln).mul(86_400).toString();
+  const activeSeries = data.bonds.filter(
+    (bond) => !bond.valuation.missingRate && D(bond.valuation.accrualPerSecondPln).gt(0),
+  );
+  const rankGap = data.game.nextRank ? D(data.game.nextRank.thresholdPln).minus(liveValue) : D(0);
+  const missingToRank = rankGap.isNegative() ? '0' : rankGap.toString();
 
   return (
     <div className="page dashboard-page">
       <div className="topline">
         <div>
           <span className="online-dot" />
-          PRYWATNY PORTFEL
+          PRYWATNY SKARBIEC OBLIGACJI
         </div>
         <button
           type="button"
@@ -92,37 +119,41 @@ export function DashboardPage() {
       {query.isError && (
         <div className="notice error">
           <TriangleAlert size={17} />
-          <span>Nie udało się pobrać danych. Sprawdź lokalne Functions i uwierzytelnienie.</span>
+          <span>Nie udało się pobrać danych obligacji.</span>
         </div>
       )}
+
       <section className="hero-grid">
         <div className="hero-copy">
           <div className="rank-pill">
             <Gem size={15} />
             RANGA · {data.game.currentRank.name.toUpperCase()}
           </div>
-          <p className="hero-kicker">WARTOŚĆ TWOJEGO KAPITAŁU</p>
-          <h1 className="portfolio-value">
-            <AnimatedValue value={data.totalValuePln} />
-          </h1>
+          <p className="hero-kicker">WARTOŚĆ TWOICH OBLIGACJI</p>
+          <h1 className="portfolio-value live-portfolio-value">{formatPln(liveValue)}</h1>
+          <div className="live-ticker" aria-label="Licznik odsetek działa na żywo">
+            <span className="live-dot" />
+            NA ŻYWO
+            <strong>+{formatPrecisePln(data.accrualPerSecondPln)}/s</strong>
+          </div>
           <div className="result-line">
             <span className={positive ? 'positive' : 'negative'}>
               {positive ? '+' : ''}
-              {formatPln(data.totalProfitPln)} <small>{formatPercent(data.returnPercent)}</small>
+              {formatPln(liveProfit)} <small>{formatPercent(returnPercent)}</small>
             </span>
-            <span className="estimate">wynik szacunkowy</span>
+            <span className="estimate">wynik narastający co sekundę</span>
           </div>
           <div className="million-progress">
             <div className="progress-label">
-              <span>Droga do 1 000 000 PLN</span>
-              <strong>{formatPercent(progress, 2)}</strong>
+              <span>Droga obligacjami do 1 000 000 PLN</span>
+              <strong>{formatPercent(progress, 4)}</strong>
             </div>
             <div className="progress-track">
-              <span style={{ width: `${Math.min(100, progress)}%` }} />
+              <span style={{ width: `${progress}%` }} />
             </div>
             <p>
               Do kolejnej rangi <strong>{data.game.nextRank?.name ?? 'Cel osiągnięty'}</strong>{' '}
-              brakuje {formatPln(data.game.missingToNextRankPln, 0)}
+              brakuje {formatPln(missingToRank, 0)}
             </p>
           </div>
         </div>
@@ -140,119 +171,100 @@ export function DashboardPage() {
         </button>
       </section>
 
-      <section className="metric-grid" aria-label="Podsumowanie portfela">
-        <Metric
-          icon={<WalletCards />}
-          label="ETF"
-          value={formatPln(data.etfValuePln)}
-          sub={`${formatPercent(data.allocation.etfPercent)} portfela`}
-        />
+      <section className="metric-grid" aria-label="Podsumowanie obligacji">
         <Metric
           icon={<Landmark />}
-          label="Obligacje"
-          value={formatPln(data.bondsValuePln)}
-          sub={`${formatPercent(data.allocation.bondsPercent)} portfela`}
+          label="Wartość obligacji"
+          value={formatPln(liveValue)}
+          sub={`${data.bonds.length} ${data.bonds.length === 1 ? 'partia' : 'partii'} w skarbcu`}
+        />
+        <Metric
+          icon={<Coins />}
+          label="Narosłe odsetki"
+          value={formatPrecisePln(liveInterest)}
+          sub="liczone na bieżąco"
         />
         <Metric
           icon={<TrendingUp />}
-          label="Narosłe odsetki"
-          value={formatPln(data.accruedInterestPln)}
-          sub="wartość szacunkowa"
+          label="Przyrost na dobę"
+          value={`+${formatPln(dailyAccrual)}`}
+          sub="według obecnych okresów"
         />
         <Metric
-          icon={<Activity />}
-          label="Zmiana dzienna"
-          value={data.dailyChangePln === null ? 'Brak danych' : formatPln(data.dailyChangePln)}
-          sub="gdy dostawca podaje poprzednie zamknięcie"
+          icon={<Gauge />}
+          label="Tempo naliczania"
+          value={`+${formatPrecisePln(data.accrualPerSecondPln)}`}
+          sub="każdej sekundy"
         />
       </section>
 
-      <section className="dashboard-lower">
-        <Card className="allocation-card">
+      <section className="dashboard-lower bond-dashboard-lower">
+        <Card className="accrual-engine-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">ALOKACJA</p>
-              <h2>Spokojna równowaga</h2>
+              <p className="eyebrow">SILNIK ODSETEK</p>
+              <h2>Kapitał pracuje</h2>
             </div>
-            <Link to="/etf">
-              Szczegóły <ArrowRight size={15} />
-            </Link>
+            <div className="engine-status">
+              <Radio size={16} /> aktywny
+            </div>
           </div>
-          <div className="allocation-visual">
-            <div
-              className="allocation-donut"
-              style={
-                {
-                  '--allocation': `${Number(data.allocation.etfPercent) * 3.6}deg`,
-                } as React.CSSProperties
-              }
-            >
-              <div>
-                <strong>{formatPercent(data.allocation.etfPercent, 0)}</strong>
-                <span>ETF</span>
-              </div>
-            </div>
-            <div className="legend">
-              <span>
-                <i className="emerald" />
-                ETF <strong>{formatPln(data.etfValuePln)}</strong>
-              </span>
-              <span>
-                <i className="blue" />
-                Obligacje <strong>{formatPln(data.bondsValuePln)}</strong>
-              </span>
-            </div>
+          <div className="engine-counter">
+            <span>Naliczone odsetki</span>
+            <strong>{formatPrecisePln(liveInterest)}</strong>
+            <small>
+              +{formatPrecisePln(data.accrualPerSecondPln)}/s · +{formatPln(dailyAccrual)}/dobę
+            </small>
+          </div>
+          <div className="engine-meta">
+            <span>
+              <CalendarClock size={16} />
+              {new Intl.DateTimeFormat('pl-PL', { timeStyle: 'medium' }).format(timestamp)}
+            </span>
+            <span>{activeSeries.length} aktywnych okresów oprocentowania</span>
           </div>
         </Card>
-        <Card className="market-card">
+
+        <Card className="bond-series-card">
           <div className="card-heading">
             <div>
-              <p className="eyebrow">ŹRÓDŁO WYCENY</p>
-              <h2>Status rynku</h2>
+              <p className="eyebrow">TWOJE SERIE</p>
+              <h2>Obligacje w skarbcu</h2>
             </div>
-            {primaryQuote && <StatusBadge status={primaryQuote.marketStatus} />}
+            <Link to="/bonds">
+              Zarządzaj <ArrowRight size={15} />
+            </Link>
           </div>
-          {primaryQuote ? (
-            <div className="market-detail">
-              <div className="market-symbol">
-                <span>{primaryQuote.symbol}</span>
-                <strong>
-                  {primaryQuote.price
-                    ? `${primaryQuote.price} ${primaryQuote.currency}`
-                    : 'Brak ceny'}
-                </strong>
-              </div>
-              <p>
-                {primaryQuote.provider ?? 'Nieznane źródło'} ·{' '}
-                {primaryQuote.staleReason ??
-                  'Cena nie jest określana jako „na żywo” bez potwierdzenia dostawcy.'}
-              </p>
-              {primaryQuote.fxMissing && (
-                <div className="inline-warning">
-                  <TriangleAlert size={15} />
-                  Brakuje jawnego kursu FX do PLN.
+          {data.bonds.length ? (
+            <div className="dashboard-bond-list">
+              {data.bonds.slice(0, 4).map((bond) => (
+                <div key={bond.id}>
+                  <span>
+                    <strong>{bond.series}</strong>
+                    <small>wykup {new Date(bond.maturityDate).toLocaleDateString('pl-PL')}</small>
+                  </span>
+                  <span className={bond.valuation.missingRate ? 'rate-missing' : 'rate-live'}>
+                    {bond.valuation.missingRate
+                      ? 'Uzupełnij oprocentowanie'
+                      : `+${formatPrecisePln(bond.valuation.accrualPerSecondPln)}/s`}
+                  </span>
                 </div>
-              )}
+              ))}
             </div>
           ) : (
-            <div className="mini-empty">
-              <Sparkles size={24} />
-              <p>Dodaj instrument i cenę, aby uruchomić wycenę ETF.</p>
-              <Link to="/etf">Dodaj ETF</Link>
+            <div className="bond-empty-cta">
+              <Landmark size={28} />
+              <p>Dodaj pierwszą partię obligacji i uruchom licznik odsetek.</p>
+              <Link className="button" to="/bonds">
+                Dodaj obligacje
+              </Link>
             </div>
           )}
-          <div className="updated">
-            <Clock3 size={14} />
-            Aktualizacja{' '}
-            {new Intl.DateTimeFormat('pl-PL', { dateStyle: 'medium', timeStyle: 'short' }).format(
-              new Date(data.asOf),
-            )}
-          </div>
         </Card>
       </section>
       <p className="disclaimer">
-        Wartości obligacji są szacunkiem. Aplikacja nie jest narzędziem podatkowym ani oficjalnym
-        wyciągiem.
+        Licznik jest szacunkiem opartym wyłącznie na wpisanych okresach oprocentowania i wybranej
+        konwencji day-count. Nie prognozuje przyszłych stóp.
       </p>
     </div>
   );

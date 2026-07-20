@@ -60,25 +60,20 @@ export interface DashboardData {
   totalValuePln: string;
   totalProfitPln: string;
   returnPercent: string;
-  etfValuePln: string;
   bondsValuePln: string;
+  bondPrincipalPln: string;
+  bondPurchaseCostPln: string;
   accruedInterestPln: string;
-  dailyChangePln: string | null;
-  allocation: { etfPercent: string; bondsPercent: string };
-  quotes: Array<{
-    instrumentId: string;
-    symbol: string;
-    price?: string;
-    currency?: string;
-    provider?: string;
-    quotedAt?: string;
-    marketStatus?: MarketStatus;
-    staleReason?: string;
-    fxMissing?: boolean;
-  }>;
+  accrualPerSecondPln: string;
   bonds: Array<
     Bond & {
-      valuation: { missingRate: boolean; accruedInterestPln: string; currentValuePln: string };
+      valuation: {
+        missingRate: boolean;
+        accruedInterestPln: string;
+        currentValuePln: string;
+        profitPln: string;
+        accrualPerSecondPln: string;
+      };
     }
   >;
   game: Progression;

@@ -33,6 +33,10 @@ export interface BondValuation {
   missingRate: boolean;
 }
 
+export interface LiveBondValuation extends BondValuation {
+  accrualPerSecondPln: string;
+}
+
 const utc = (date: string) => new Date(`${date}T00:00:00Z`);
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const daysBetween = (start: string, end: string) =>
@@ -114,5 +118,34 @@ export function calculateBond(lot: BondLotInput, asOf = iso(new Date())): BondVa
     currentValuePln: currentValue.toString(),
     profitPln: currentValue.add(paidOut).sub(purchaseCost).toString(),
     missingRate: valuationDate < lot.maturityDate && !coversCurrent,
+  };
+}
+
+/**
+ * Extends the day-count valuation with a deterministic, per-second accrual.
+ * The daily economic change includes both value still held in the bond and
+ * interest paid out at a period boundary, so capitalization and payouts do
+ * not introduce artificial jumps in profit.
+ */
+export function calculateBondLive(lot: BondLotInput, at = new Date()): LiveBondValuation {
+  const day = iso(at);
+  const tomorrowDate = utc(day);
+  tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
+
+  const valuation = calculateBond(lot, day);
+  const tomorrow = calculateBond(lot, iso(tomorrowDate));
+  const economicValue = D(valuation.currentValuePln).add(valuation.paidOutInterestPln);
+  const tomorrowEconomicValue = D(tomorrow.currentValuePln).add(tomorrow.paidOutInterestPln);
+  const accrualPerSecond = Decimal.max(tomorrowEconomicValue.sub(economicValue), ZERO).div(86_400);
+  const startOfDay = utc(day).getTime();
+  const elapsedSeconds = Math.max(0, Math.min(86_400, (at.getTime() - startOfDay) / 1_000));
+  const accruedSinceMidnight = accrualPerSecond.mul(elapsedSeconds);
+
+  return {
+    ...valuation,
+    accruedInterestPln: D(valuation.accruedInterestPln).add(accruedSinceMidnight).toString(),
+    currentValuePln: D(valuation.currentValuePln).add(accruedSinceMidnight).toString(),
+    profitPln: D(valuation.profitPln).add(accruedSinceMidnight).toString(),
+    accrualPerSecondPln: accrualPerSecond.toString(),
   };
 }

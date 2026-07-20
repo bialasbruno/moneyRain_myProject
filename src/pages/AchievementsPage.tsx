@@ -22,7 +22,7 @@ export function AchievementsPage() {
       <PageHeader
         eyebrow="GABLOTA"
         title="Osiągnięcia"
-        text="Nagradzamy konsekwencję, dywersyfikację i oszczędzanie — nigdy częsty handel ani ryzyko."
+        text="Nagradzamy konsekwencję, regularne oszczędzanie i cierpliwość w budowaniu portfela obligacji."
         action={
           <div className="achievement-counter">
             <strong>{unlocked}</strong>

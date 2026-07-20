@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { calculateBond, type BondLotInput, type BondRatePeriod } from '../../src/domain/bonds';
-import { calculateEtf, type InvestmentTransaction } from '../../src/domain/etf';
+import { calculateBondLive, type BondLotInput, type BondRatePeriod } from '../../src/domain/bonds';
 import Decimal from 'decimal.js';
 import { D, ZERO } from '../../src/domain/money';
 import { DEFAULT_RANKS, progressionFor } from '../../src/domain/progression';
@@ -118,86 +117,27 @@ async function requireInstrument(env: Env, instrumentId: string) {
 }
 
 async function dashboard(env: Env) {
-  const [instrumentRows, txRows, bondRows, rateRows, cashflowRows, stateRow, rankRows] =
-    await Promise.all([
-      rows<Record<string, unknown>>(
-        env.DB.prepare('SELECT * FROM instruments ORDER BY created_at, id'),
-      ),
-      rows<Record<string, unknown>>(
-        env.DB.prepare('SELECT * FROM investment_transactions ORDER BY executed_at, id'),
-      ),
-      rows<Record<string, unknown>>(
-        env.DB.prepare('SELECT * FROM bond_lots ORDER BY purchase_date, id'),
-      ),
-      rows<Record<string, unknown>>(
-        env.DB.prepare('SELECT * FROM bond_rate_periods ORDER BY start_date, id'),
-      ),
-      rows<Record<string, unknown>>(
-        env.DB.prepare('SELECT * FROM bond_cashflows ORDER BY payment_date, id'),
-      ),
-      env.DB.prepare("SELECT * FROM game_state WHERE id = 'owner'").first<
-        Record<string, unknown>
-      >(),
-      rows<Record<string, unknown>>(env.DB.prepare('SELECT * FROM ranks ORDER BY sort_order')),
-    ]);
+  const [bondRows, rateRows, cashflowRows, stateRow, rankRows] = await Promise.all([
+    rows<Record<string, unknown>>(
+      env.DB.prepare('SELECT * FROM bond_lots ORDER BY purchase_date, id'),
+    ),
+    rows<Record<string, unknown>>(
+      env.DB.prepare('SELECT * FROM bond_rate_periods ORDER BY start_date, id'),
+    ),
+    rows<Record<string, unknown>>(
+      env.DB.prepare('SELECT * FROM bond_cashflows ORDER BY payment_date, id'),
+    ),
+    env.DB.prepare("SELECT * FROM game_state WHERE id = 'owner'").first<Record<string, unknown>>(),
+    rows<Record<string, unknown>>(env.DB.prepare('SELECT * FROM ranks ORDER BY sort_order')),
+  ]);
 
-  let etfValue = ZERO;
-  let etfProfit = ZERO;
-  let etfCost = ZERO;
-  let dailyChange = ZERO;
-  let hasDailyChange = false;
-  const quoteSummaries: unknown[] = [];
-  for (const instrumentRow of instrumentRows) {
-    const instrument = instrumentRow as unknown as QuoteInstrument;
-    const instrumentTxRows = txRows.filter((row) => row.instrument_id === instrument.id);
-    let quote;
-    try {
-      quote = await quoteFor(env, instrument);
-    } catch {
-      quote = null;
-    }
-    const latestFx = [...instrumentTxRows]
-      .reverse()
-      .find((row) => row.currency === instrument.quote_currency)?.fx_rate_to_pln;
-    const quoteFx = instrument.quote_currency === 'PLN' ? '1' : String(latestFx ?? '0');
-    const txs: InvestmentTransaction[] = instrumentTxRows.map((row) => ({
-      id: String(row.id),
-      type: String(row.type) as InvestmentTransaction['type'],
-      executedAt: String(row.executed_at),
-      quantity: String(row.quantity),
-      unitPrice: String(row.unit_price),
-      fee: String(row.fee),
-      currency: String(row.currency),
-      fxRateToPln: String(row.fx_rate_to_pln),
-    }));
-    let result;
-    try {
-      result = calculateEtf(txs, quote?.price ?? '0', quoteFx);
-      etfValue = etfValue.add(result.marketValuePln);
-      etfProfit = etfProfit.add(result.totalProfitPln);
-      etfCost = etfCost.add(result.purchasesAndFeesPln);
-      if (quote?.previousClose) {
-        dailyChange = dailyChange.add(
-          D(result.quantity).mul(D(quote.price).sub(quote.previousClose)).mul(quoteFx),
-        );
-        hasDailyChange = true;
-      }
-    } catch {
-      result = calculateEtf([], '0', '1');
-    }
-    quoteSummaries.push({
-      instrumentId: instrument.id,
-      symbol: instrument.symbol,
-      ...quote,
-      fxRateToPln: quoteFx,
-      fxMissing: instrument.quote_currency !== 'PLN' && D(quoteFx).eq(0),
-      valuation: result,
-    });
-  }
-
+  const valuationTime = new Date();
   let bondValue = ZERO;
+  let bondPrincipal = ZERO;
+  let bondCost = ZERO;
   let accruedInterest = ZERO;
   let bondProfit = ZERO;
+  let accrualPerSecond = ZERO;
   const bondSummaries = bondRows.map((row) => {
     const periods: BondRatePeriod[] = rateRows
       .filter((rate) => rate.bond_lot_id === row.id)
@@ -218,13 +158,16 @@ async function dashboard(env: Env) {
       dayCountConvention: String(row.day_count_convention) as BondLotInput['dayCountConvention'],
       periods,
     };
-    const valuation = calculateBond(input);
+    const valuation = calculateBondLive(input, valuationTime);
     const recorded = cashflowRows
       .filter((flow) => flow.bond_lot_id === row.id)
       .reduce((sum, flow) => sum.add(String(flow.gross_amount_pln)), ZERO);
     bondValue = bondValue.add(valuation.currentValuePln);
+    bondPrincipal = bondPrincipal.add(valuation.principalPln);
+    bondCost = bondCost.add(D(String(row.quantity)).mul(String(row.purchase_price_pln)));
     accruedInterest = accruedInterest.add(valuation.accruedInterestPln);
     bondProfit = bondProfit.add(valuation.profitPln).add(recorded);
+    accrualPerSecond = accrualPerSecond.add(valuation.accrualPerSecondPln);
     return {
       ...bondOut(row),
       periods,
@@ -232,14 +175,9 @@ async function dashboard(env: Env) {
     };
   });
 
-  const totalValue = etfValue.add(bondValue);
-  const totalProfit = etfProfit.add(bondProfit);
-  const totalCost = etfCost.add(
-    bondRows.reduce(
-      (sum, row) => sum.add(D(String(row.quantity)).mul(String(row.purchase_price_pln))),
-      ZERO,
-    ),
-  );
+  const totalValue = bondValue;
+  const totalProfit = bondProfit;
+  const totalCost = bondCost;
   const ranks = rankRows.length
     ? rankRows.map((rank) => ({
         id: String(rank.id),
@@ -264,28 +202,18 @@ async function dashboard(env: Env) {
       .bind(game.currentLevel, now())
       .run();
   }
-  await unlockProgression(
-    env,
-    totalValue.toString(),
-    instrumentRows.length > 0,
-    bondRows.length > 0,
-    ranks,
-  );
+  await unlockProgression(env, totalValue.toString(), false, bondRows.length > 0, ranks);
 
   return {
-    asOf: now(),
+    asOf: valuationTime.toISOString(),
     totalValuePln: totalValue.toString(),
     totalProfitPln: totalProfit.toString(),
     returnPercent: totalCost.eq(0) ? '0' : totalProfit.div(totalCost).mul(100).toString(),
-    etfValuePln: etfValue.toString(),
     bondsValuePln: bondValue.toString(),
+    bondPrincipalPln: bondPrincipal.toString(),
+    bondPurchaseCostPln: bondCost.toString(),
     accruedInterestPln: accruedInterest.toString(),
-    dailyChangePln: hasDailyChange ? dailyChange.toString() : null,
-    allocation: {
-      etfPercent: totalValue.eq(0) ? '0' : etfValue.div(totalValue).mul(100).toString(),
-      bondsPercent: totalValue.eq(0) ? '0' : bondValue.div(totalValue).mul(100).toString(),
-    },
-    quotes: quoteSummaries,
+    accrualPerSecondPln: accrualPerSecond.toString(),
     bonds: bondSummaries,
     game: {
       ...game,

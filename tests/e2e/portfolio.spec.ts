@@ -1,17 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { DashboardData } from '../../src/types';
 
-const emptyDashboard = {
-  asOf: '2026-07-20T10:00:00Z',
+const emptyDashboard: DashboardData = {
+  asOf: new Date().toISOString(),
   totalValuePln: '0',
   totalProfitPln: '0',
   returnPercent: '0',
-  etfValuePln: '0',
   bondsValuePln: '0',
+  bondPrincipalPln: '0',
+  bondPurchaseCostPln: '0',
   accruedInterestPln: '0',
-  dailyChangePln: null,
-  allocation: { etfPercent: '0', bondsPercent: '0' },
-  quotes: [],
+  accrualPerSecondPln: '0',
   bonds: [],
   game: {
     currentLevel: 0,
@@ -34,10 +33,8 @@ const emptyDashboard = {
 };
 
 async function mockApi(page: Page, effectsLevel: 'FULL' | 'LIMITED' | 'OFF' = 'OFF') {
-  const instruments: Record<string, unknown>[] = [];
-  const transactions: Record<string, unknown>[] = [];
   const bonds: Record<string, unknown>[] = [];
-  const dashboard = structuredClone(emptyDashboard) as DashboardData;
+  const dashboard = structuredClone(emptyDashboard);
   dashboard.game.effectsLevel = effectsLevel;
   await page.route('**/api/**', async (route) => {
     const request = route.request();
@@ -47,26 +44,6 @@ async function mockApi(page: Page, effectsLevel: 'FULL' | 'LIMITED' | 'OFF' = 'O
     const fulfill = (json: unknown, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(json) });
     if (path === '/dashboard') return fulfill(dashboard);
-    if (path === '/instruments' && method === 'GET') return fulfill(instruments);
-    if (path === '/instruments' && method === 'POST') {
-      const body = request.postDataJSON() as Record<string, unknown>;
-      const item = { id: '11111111-1111-4111-8111-111111111111', ...body };
-      instruments.push(item);
-      return fulfill(item, 201);
-    }
-    if (path === '/transactions' && method === 'GET') return fulfill(transactions);
-    if (path === '/transactions' && method === 'POST') {
-      const body = request.postDataJSON() as Record<string, unknown>;
-      const item = { id: '22222222-2222-4222-8222-222222222222', ...body };
-      transactions.push(item);
-      dashboard.totalValuePln = '4200';
-      dashboard.etfValuePln = '4200';
-      dashboard.allocation.etfPercent = '100';
-      dashboard.game.currentLevel = 6;
-      dashboard.game.highestLevel = 6;
-      dashboard.game.millionProgressPercent = '0.42';
-      return fulfill(item, 201);
-    }
     if (path === '/bonds' && method === 'GET') return fulfill(bonds);
     if (path === '/bonds' && method === 'POST') {
       const body = request.postDataJSON() as Record<string, unknown>;
@@ -75,10 +52,11 @@ async function mockApi(page: Page, effectsLevel: 'FULL' | 'LIMITED' | 'OFF' = 'O
         id: '33333333-3333-4333-8333-333333333333',
       };
       bonds.push(item);
-      dashboard.totalValuePln = '5200';
+      dashboard.asOf = new Date().toISOString();
+      dashboard.totalValuePln = '1000';
       dashboard.bondsValuePln = '1000';
-      dashboard.allocation.etfPercent = '80.769';
-      dashboard.allocation.bondsPercent = '19.231';
+      dashboard.bondPrincipalPln = '1000';
+      dashboard.bondPurchaseCostPln = '1000';
       dashboard.bonds = [
         {
           id: String(item.id),
@@ -91,17 +69,29 @@ async function mockApi(page: Page, effectsLevel: 'FULL' | 'LIMITED' | 'OFF' = 'O
           purchasePricePln: String(item.purchasePricePln),
           interestHandling: String(item.interestHandling) as 'CAPITALIZE' | 'PAY_OUT',
           dayCountConvention: String(item.dayCountConvention) as 'ACT/365' | 'ACT/ACT' | '30E/360',
-          valuation: { missingRate: true, accruedInterestPln: '0', currentValuePln: '1000' },
+          valuation: {
+            missingRate: true,
+            accruedInterestPln: '0',
+            currentValuePln: '1000',
+            profitPln: '0',
+            accrualPerSecondPln: '0',
+          },
         },
       ];
       return fulfill(item, 201);
     }
     if (path.endsWith('/rates') && method === 'POST') {
+      dashboard.asOf = new Date().toISOString();
       dashboard.bonds[0]!.valuation.missingRate = false;
       dashboard.bonds[0]!.valuation.accruedInterestPln = '25';
       dashboard.bonds[0]!.valuation.currentValuePln = '1025';
-      dashboard.totalValuePln = '5225';
+      dashboard.bonds[0]!.valuation.profitPln = '25';
+      dashboard.bonds[0]!.valuation.accrualPerSecondPln = '0.01';
+      dashboard.totalValuePln = '1025';
+      dashboard.totalProfitPln = '25';
       dashboard.bondsValuePln = '1025';
+      dashboard.accruedInterestPln = '25';
+      dashboard.accrualPerSecondPln = '0.01';
       return fulfill({ id: '44444444-4444-4444-8444-444444444444' }, 201);
     }
     if (path === '/game')
@@ -117,30 +107,13 @@ async function mockApi(page: Page, effectsLevel: 'FULL' | 'LIMITED' | 'OFF' = 'O
   });
 }
 
-test('pełna ścieżka: instrument, transakcja, obligacja, stopa i dashboard', async ({
-  page,
-}, testInfo) => {
+test('pełna ścieżka obligacji i licznik odsetek na żywo', async ({ page }, testInfo) => {
   await mockApi(page);
   await page.goto('/dashboard');
-  await expect(page.getByRole('heading', { name: '0 zł' })).toBeVisible();
+  await expect(page.locator('.portfolio-value')).toContainText('0,00');
 
   await page.goto('/etf');
-  await page.getByRole('button', { name: 'Instrument', exact: true }).click();
-  await page.getByLabel('Nazwa').fill('Globalny ETF testowy');
-  await page.getByLabel('Ticker').fill('ACWI');
-  await page.getByLabel('Symbol dostawcy').fill('ACWI');
-  await page.getByLabel('Cena ręczna', { exact: true }).fill('100');
-  await page.getByRole('button', { name: 'Zapisz instrument' }).click();
-  await expect(page.getByText('Globalny ETF testowy')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Transakcja', exact: true }).click();
-  await page.getByLabel('Liczba jednostek').fill('10');
-  await page.getByLabel('Cena jednostkowa').fill('100');
-  await page.getByLabel('Kurs do PLN').fill('4.2');
-  await page.getByRole('button', { name: 'Zapisz transakcję' }).click();
-  await expect(page.getByText('BUY', { exact: true })).toBeVisible();
-
-  await page.goto('/bonds');
+  await expect(page).toHaveURL(/\/bonds$/);
   await page.getByRole('button', { name: 'Dodaj partię' }).click();
   await page.getByLabel('Seria').fill('EDO TEST');
   await page.getByLabel('Data wykupu').fill('2036-07-20');
@@ -153,7 +126,12 @@ test('pełna ścieżka: instrument, transakcja, obligacja, stopa i dashboard', a
   await page.getByRole('button', { name: 'Zapisz' }).click();
 
   await page.goto('/dashboard');
-  await expect(page.locator('.portfolio-value')).toContainText('5225');
+  await expect(page.locator('.portfolio-value')).toContainText('1025');
+  await expect(page.getByText('SILNIK ODSETEK')).toBeVisible();
+  const counter = page.locator('.engine-counter > strong');
+  const before = await counter.textContent();
+  await page.waitForTimeout(1_100);
+  await expect(counter).not.toHaveText(before ?? '');
   await page.screenshot({
     path: `artifacts/dashboard-${testInfo.project.name}.png`,
     fullPage: true,

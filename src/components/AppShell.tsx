@@ -2,7 +2,6 @@ import {
   BadgeCheck,
   BarChart3,
   Boxes,
-  CircleDollarSign,
   Goal,
   Landmark,
   Map,
@@ -18,9 +17,8 @@ import { ProgressionCelebration } from './ProgressionCelebration';
 
 const navigation = [
   { to: '/dashboard', label: 'Pulpit', icon: BarChart3 },
-  { to: '/journey', label: 'Droga', icon: Map },
-  { to: '/etf', label: 'ETF', icon: CircleDollarSign },
   { to: '/bonds', label: 'Obligacje', icon: Landmark },
+  { to: '/journey', label: 'Droga', icon: Map },
   { to: '/goals', label: 'Cele', icon: Goal },
   { to: '/vault', label: 'Skarbiec', icon: Boxes },
   { to: '/achievements', label: 'Osiągnięcia', icon: BadgeCheck },
@@ -46,7 +44,7 @@ export function AppShell() {
           </div>
           <div>
             <strong>MONEY RAIN</strong>
-            <span>Droga do miliona</span>
+            <span>Obligacjami do miliona</span>
           </div>
         </div>
         <nav>

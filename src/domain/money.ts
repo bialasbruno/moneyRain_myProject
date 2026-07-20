@@ -22,6 +22,15 @@ export function formatPln(value: DecimalInput, maximumFractionDigits = 2): strin
   }).format(D(value).toNumber());
 }
 
+export function formatPrecisePln(value: DecimalInput, fractionDigits = 6): string {
+  return new Intl.NumberFormat('pl-PL', {
+    style: 'currency',
+    currency: 'PLN',
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(D(value).toNumber());
+}
+
 export function formatPercent(value: DecimalInput, maximumFractionDigits = 2): string {
   return `${new Intl.NumberFormat('pl-PL', { maximumFractionDigits }).format(D(value).toNumber())}%`;
 }

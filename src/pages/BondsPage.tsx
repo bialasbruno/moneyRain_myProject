@@ -1,13 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarRange, Landmark, Plus, TriangleAlert } from 'lucide-react';
+import { CalendarRange, Gauge, Landmark, Plus, Radio, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Card, EmptyState, PageHeader, useToast } from '../components/Ui';
 import { api, postJson } from '../lib/api';
 import type { Bond, DashboardData } from '../types';
-import { formatPln } from '../domain/money';
+import { formatPln, formatPrecisePln } from '../domain/money';
+import { liveAccruedValue, useLiveClock } from '../hooks/useLiveAccrual';
 
 const schema = z.object({
   series: z.string().min(1),
@@ -31,6 +32,7 @@ const rateSchema = z.object({
 type RateForm = z.infer<typeof rateSchema>;
 
 export function BondsPage() {
+  const timestamp = useLiveClock();
   const [showForm, setShowForm] = useState(false);
   const [rateFor, setRateFor] = useState<string | null>(null);
   const qc = useQueryClient();
@@ -39,6 +41,7 @@ export function BondsPage() {
   const dashboard = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api<DashboardData>('/dashboard'),
+    refetchInterval: 60_000,
   });
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -68,6 +71,7 @@ export function BondsPage() {
     mutationFn: (v: FormData) => postJson<Bond>('/bonds', v),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bonds'] });
+      void qc.invalidateQueries({ queryKey: ['dashboard'] });
       setShowForm(false);
       notify('Partia obligacji została dodana.');
     },
@@ -84,12 +88,28 @@ export function BondsPage() {
     onError: (e: Error) => notify(e.message, 'error'),
   });
   const valuations = dashboard.data?.bonds ?? [];
+  const liveTotal = dashboard.data
+    ? liveAccruedValue(
+        dashboard.data.bondsValuePln,
+        dashboard.data.accrualPerSecondPln,
+        dashboard.data.asOf,
+        timestamp,
+      )
+    : '0';
+  const liveInterest = dashboard.data
+    ? liveAccruedValue(
+        dashboard.data.accruedInterestPln,
+        dashboard.data.accrualPerSecondPln,
+        dashboard.data.asOf,
+        timestamp,
+      )
+    : '0';
   return (
     <div className="page">
       <PageHeader
         eyebrow="OBLIGACJE SKARBOWE"
-        title="Stabilna część skarbca"
-        text="Rzeczywiste okresy oprocentowania, jawna kapitalizacja i wybrana konwencja day-count."
+        title="Twój skarbiec obligacji"
+        text="Dodawaj partie i ich rzeczywiste okresy oprocentowania. Odsetki zobaczysz narastająco co sekundę."
         action={
           <button className="button" onClick={() => setShowForm((v) => !v)}>
             <Plus size={17} />
@@ -97,6 +117,28 @@ export function BondsPage() {
           </button>
         }
       />
+      <Card className="bond-live-summary">
+        <div className="bond-live-copy">
+          <div className="live-ticker">
+            <span className="live-dot" />
+            LICZNIK NA ŻYWO
+          </div>
+          <span>Łączna wartość obligacji</span>
+          <strong>{formatPrecisePln(liveTotal)}</strong>
+        </div>
+        <div className="bond-live-stats">
+          <span>
+            <small>NAROSŁE ODSETKI</small>
+            <strong>{formatPrecisePln(liveInterest)}</strong>
+          </span>
+          <span>
+            <small>TEMPO</small>
+            <strong>
+              <Gauge size={16} /> +{formatPrecisePln(dashboard.data?.accrualPerSecondPln ?? 0)}/s
+            </strong>
+          </span>
+        </div>
+      </Card>
       {showForm && (
         <Card className="form-card">
           <form className="form-grid" onSubmit={form.handleSubmit((v) => add.mutate(v))}>
@@ -158,6 +200,22 @@ export function BondsPage() {
         <div className="bond-grid">
           {bonds.data.map((bond) => {
             const view = valuations.find((v) => v.id === bond.id);
+            const liveBondValue = view
+              ? liveAccruedValue(
+                  view.valuation.currentValuePln,
+                  view.valuation.accrualPerSecondPln,
+                  dashboard.data?.asOf ?? new Date(timestamp).toISOString(),
+                  timestamp,
+                )
+              : String(Number(bond.quantity) * Number(bond.nominalValuePln));
+            const liveBondInterest = view
+              ? liveAccruedValue(
+                  view.valuation.accruedInterestPln,
+                  view.valuation.accrualPerSecondPln,
+                  dashboard.data?.asOf ?? new Date(timestamp).toISOString(),
+                  timestamp,
+                )
+              : '0';
             return (
               <Card className="bond-card" key={bond.id}>
                 <div className="bond-top">
@@ -171,13 +229,13 @@ export function BondsPage() {
                   </div>
                 </div>
                 <div className="bond-value">
-                  <span>Wartość szacunkowa</span>
-                  <strong>
-                    {formatPln(
-                      view?.valuation.currentValuePln ??
-                        Number(bond.quantity) * Number(bond.nominalValuePln),
-                    )}
-                  </strong>
+                  <span>Wartość na żywo</span>
+                  <strong>{formatPrecisePln(liveBondValue)}</strong>
+                  {!view?.valuation.missingRate && view && (
+                    <small className="bond-rate-live">
+                      <Radio size={13} /> +{formatPrecisePln(view.valuation.accrualPerSecondPln)}/s
+                    </small>
+                  )}
                 </div>
                 <div className="bond-meta">
                   <span>
@@ -186,7 +244,7 @@ export function BondsPage() {
                   </span>
                   <span>
                     <small>ODSETKI</small>
-                    {formatPln(view?.valuation.accruedInterestPln ?? 0)}
+                    {formatPln(liveBondInterest)}
                   </span>
                   <span>
                     <small>KONWENCJA</small>

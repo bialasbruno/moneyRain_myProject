@@ -75,6 +75,6 @@ Po wdrożeniu:
 curl -i https://portfolio.example.com/api/health
 ```
 
-Bez sesji odpowiedź ma być blokadą Access albo 403. Po zalogowaniu sprawdź dodanie ręcznego instrumentu, transakcji, partii obligacji i okresu stopy. Następnie pobierz eksport w Ustawieniach i przechowuj poza Cloudflare.
+Bez sesji odpowiedź ma być blokadą Access albo 403. Po zalogowaniu sprawdź dodanie partii obligacji, okresu oprocentowania oraz zmianę licznika odsetek po upływie sekundy. Następnie pobierz eksport w Ustawieniach i przechowuj poza Cloudflare.
 
 Sprawdź w `dist/assets`, że nie występuje wartość `MARKET_DATA_API_KEY`. Repozytorium zawiera tylko nazwę zmiennej, nie sekret.

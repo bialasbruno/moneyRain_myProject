@@ -24,4 +24,6 @@ JSON import jest dwuetapowy: walidacja + podgląd, następnie osobne potwierdzen
 
 ## Gamifikacja
 
-Wartość bieżąca wyznacza aktualny level i postęp. `highest_level`, odblokowania oraz szczyt wartości są trwałe. `progression_events.event_key` jest unikalny, więc ponowne przeliczenie nie przyznaje nagrody drugi raz. XP może pochodzić z zewnętrznych wpłat i celów, nigdy z liczby BUY/SELL. Przedmioty są wyłącznie kosmetyczne.
+Wartość bieżąca wyznacza aktualny level i postęp. `highest_level`, odblokowania oraz szczyt wartości są trwałe. `progression_events.event_key` jest unikalny, więc ponowne przeliczenie nie przyznaje nagrody drugi raz. XP może pochodzić z zewnętrznych wpłat i celów, nigdy z liczby operacji na obligacjach.
+
+Postać ma siedem niezależnych slotów wyposażenia: głowa, oczy, strój, ręka, plecy, buty i towarzysz. Przedmioty progowe odblokowują się trwale po osiągnięciu nowego szczytu wartości portfela. Każda zewnętrzna wpłata tworzy dokładnie jedną skrzynkę dzięki unikalnemu `contribution_id`; jej poziom zależy od kwoty wpłaty. Otwarcie losuje rzadkość kryptograficznie bezpiecznym źródłem losowości Workera i przyznaje nieposiadany przedmiot. Po zebraniu całej puli skrzynka daje 250 XP. Przedmioty są wyłącznie kosmetyczne i nie zmieniają wyceny.

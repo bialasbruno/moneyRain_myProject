@@ -65,6 +65,29 @@ export const rateSchema = z
     message: 'Koniec okresu musi być późniejszy.',
   });
 
+export const bondCreateSchema = z
+  .object({
+    bond: bondSchema,
+    firstRate: rateSchema.optional().nullable(),
+  })
+  .superRefine(({ bond, firstRate }, context) => {
+    if (!firstRate) return;
+    if (firstRate.startDate < bond.purchaseDate) {
+      context.addIssue({
+        code: 'custom',
+        path: ['firstRate', 'startDate'],
+        message: 'Pierwszy okres nie może zaczynać się przed zakupem.',
+      });
+    }
+    if (firstRate.endDate > bond.maturityDate) {
+      context.addIssue({
+        code: 'custom',
+        path: ['firstRate', 'endDate'],
+        message: 'Pierwszy okres nie może kończyć się po wykupie.',
+      });
+    }
+  });
+
 export const cashflowSchema = z.object({
   paymentDate: isoDate,
   grossAmountPln: positiveDecimal,

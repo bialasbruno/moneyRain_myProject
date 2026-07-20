@@ -9,7 +9,7 @@ npx wrangler d1 create money-rain-production
 npx wrangler d1 create money-rain-preview
 ```
 
-Skopiuj identyfikatory do konfiguracji odpowiednich środowisk Pages jako binding `DB`. Nie współdziel bazy. Przed wdrożeniem zastosuj migracje:
+Skopiuj identyfikatory do konfiguracji odpowiednich środowisk Pages jako binding `DB`. Nie współdziel bazy. **Przed wdrożeniem kodu zastosuj wszystkie migracje** — endpointy postaci wymagają tabel z `0003_character_loot.sql`:
 
 ```bash
 npx wrangler d1 migrations apply money-rain-preview --remote
@@ -41,7 +41,7 @@ Jeżeli korzystasz z klasycznej integracji Git w Cloudflare Pages, usuń niestan
 npm run deploy
 ```
 
-Skrypt uruchamia `wrangler pages deploy dist --project-name money-rain`. Nie ustawiaj `npx wrangler deploy`; ta komenda wdraża Workers i nie obsługuje katalogu `functions/` jako Pages Functions.
+Skrypt uruchamia `wrangler pages deploy dist --project-name money-rain-essa --branch=private`. Nie ustawiaj `npx wrangler deploy`; ta komenda wdraża Workers i nie obsługuje katalogu `functions/` jako Pages Functions.
 
 ## 3. Zmienne i sekrety
 
@@ -62,7 +62,7 @@ Dla preview ustaw `ENVIRONMENT=preview`, osobny audience/politykę i osobny kluc
 3. Polityka `Allow` ma zawierać dokładnie jeden `Emails = OWNER_EMAIL`.
 4. Nie dodawaj publicznego `Bypass` ani `Everyone`.
 5. Skopiuj AUD do `CF_ACCESS_AUD`.
-6. Zweryfikuj ochronę strony głównej oraz `/api/health` i `/api/dashboard` w oknie bez sesji.
+6. Zweryfikuj ochronę strony głównej oraz `/api/health` i `/api/dashboard` w oknie bez sesji. Cloudflare Access ma chronić domenę produkcyjną, np. `private.money-rain-essa.pages.dev`, a nie losowy adres pojedynczego deploymentu.
 7. Zweryfikuj, że inny e-mail dostaje 403 również wtedy, gdy ma ważny token z tego samego zespołu.
 
 Access powinien obejmować całą domenę, nie tylko `/api/*`. Middleware API jest drugą warstwą, nie zamiennikiem konfiguracji brzegu.
@@ -75,6 +75,6 @@ Po wdrożeniu:
 curl -i https://portfolio.example.com/api/health
 ```
 
-Bez sesji odpowiedź ma być blokadą Access albo 403. Po zalogowaniu sprawdź dodanie partii obligacji, okresu oprocentowania oraz zmianę licznika odsetek po upływie sekundy. Następnie pobierz eksport w Ustawieniach i przechowuj poza Cloudflare.
+Bez sesji odpowiedź ma być blokadą Access albo 403. Po zalogowaniu sprawdź dodanie partii obligacji, okresu oprocentowania oraz zmianę licznika odsetek po upływie sekundy. Zapisz wpłatę, otwórz przyznaną skrzynkę w zakładce Postać i załóż wylosowany przedmiot. Następnie pobierz eksport w Ustawieniach i przechowuj poza Cloudflare.
 
 Sprawdź w `dist/assets`, że nie występuje wartość `MARKET_DATA_API_KEY`. Repozytorium zawiera tylko nazwę zmiennej, nie sekret.

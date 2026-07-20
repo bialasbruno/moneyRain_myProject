@@ -3,10 +3,16 @@ import { calculateBondLive, type BondLotInput, type BondRatePeriod } from '../..
 import Decimal from 'decimal.js';
 import { D, ZERO } from '../../src/domain/money';
 import { DEFAULT_RANKS, progressionFor } from '../../src/domain/progression';
+import {
+  chestTierForContribution,
+  rarityForChestRoll,
+  type ItemRarity,
+} from '../../src/domain/rewards';
 import { assertSameOrigin, bodyJson, errorResponse, HttpError, json, requestId } from '../lib/http';
 import { quoteFor, type QuoteInstrument } from '../lib/quotes';
 import {
   bondSchema,
+  bondCreateSchema,
   cashflowSchema,
   contributionSchema,
   goalSchema,
@@ -203,6 +209,7 @@ async function dashboard(env: Env) {
       .run();
   }
   await unlockProgression(env, totalValue.toString(), false, bondRows.length > 0, ranks);
+  await unlockCharacterItems(env, newPeak.toString());
 
   return {
     asOf: valuationTime.toISOString(),
@@ -273,6 +280,55 @@ async function unlockProgression(
     );
   }
   if (statements.length) await env.DB.batch(statements);
+}
+
+async function unlockCharacterItems(env: Env, peakValuePln: string) {
+  const items = await rows<Record<string, unknown>>(
+    env.DB.prepare("SELECT * FROM character_items WHERE unlock_type='VALUE'"),
+  );
+  const timestamp = now();
+  const statements: D1PreparedStatement[] = [];
+  for (const item of items.filter((candidate) =>
+    D(String(candidate.unlock_value_pln)).lte(peakValuePln),
+  )) {
+    const itemId = String(item.id);
+    const eventKey = `character:${itemId}`;
+    statements.push(
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO progression_events(id,event_key,type,payload,occurred_at)
+         VALUES(?,?,'ITEM_UNLOCK',?,?)`,
+      ).bind(
+        id(),
+        eventKey,
+        JSON.stringify({ itemId, name: item.name, rarity: item.rarity }),
+        timestamp,
+      ),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO character_item_unlocks(item_id,unlocked_at,source,source_ref)
+         VALUES(?,?,'VALUE',?)`,
+      ).bind(itemId, timestamp, eventKey),
+    );
+  }
+  if (statements.length) await env.DB.batch(statements);
+}
+
+function secureRandomIndex(max: number) {
+  if (max <= 1) return 0;
+  const range = 2 ** 32;
+  const limit = Math.floor(range / max) * max;
+  const values = new Uint32Array(1);
+  do crypto.getRandomValues(values);
+  while (values[0]! >= limit);
+  return values[0]! % max;
+}
+
+function chooseChestItem(
+  items: Record<string, unknown>[],
+  desiredRarity: ItemRarity,
+): Record<string, unknown> | null {
+  const matching = items.filter((item) => item.rarity === desiredRarity);
+  const pool = matching.length ? matching : items;
+  return pool.length ? pool[secureRandomIndex(pool.length)]! : null;
 }
 
 async function route(context: AppContext): Promise<Response> {
@@ -451,25 +507,40 @@ async function route(context: AppContext): Promise<Response> {
       return json(bonds);
     }
     if (!resourceId && method === 'POST') {
-      const data = bondSchema.parse(await bodyJson(request));
+      const { bond: data, firstRate } = bondCreateSchema.parse(await bodyJson(request));
       const bondId = id();
-      await env.DB.prepare(
+      const insertBond = env.DB.prepare(
         `INSERT INTO bond_lots (id,series,bond_type,purchase_date,maturity_date,quantity,nominal_value_pln,purchase_price_pln,interest_handling,day_count_convention,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      )
-        .bind(
-          bondId,
-          data.series,
-          data.bondType,
-          data.purchaseDate,
-          data.maturityDate,
-          data.quantity,
-          data.nominalValuePln,
-          data.purchasePricePln,
-          data.interestHandling,
-          data.dayCountConvention,
-          data.notes ?? null,
-        )
-        .run();
+      ).bind(
+        bondId,
+        data.series,
+        data.bondType,
+        data.purchaseDate,
+        data.maturityDate,
+        data.quantity,
+        data.nominalValuePln,
+        data.purchasePricePln,
+        data.interestHandling,
+        data.dayCountConvention,
+        data.notes ?? null,
+      );
+      if (firstRate) {
+        await env.DB.batch([
+          insertBond,
+          env.DB.prepare(
+            `INSERT INTO bond_rate_periods (id,bond_lot_id,start_date,end_date,annual_rate_percent,handling_override) VALUES (?,?,?,?,?,?)`,
+          ).bind(
+            id(),
+            bondId,
+            firstRate.startDate,
+            firstRate.endDate,
+            firstRate.annualRatePercent,
+            firstRate.handlingOverride ?? null,
+          ),
+        ]);
+      } else {
+        await insertBond.run();
+      }
       return json(
         bondOut(
           (await env.DB.prepare('SELECT * FROM bond_lots WHERE id=?')
@@ -658,6 +729,8 @@ async function route(context: AppContext): Promise<Response> {
     if (method === 'POST') {
       const data = contributionSchema.parse(await bodyJson(request));
       const contributionId = id();
+      const chestId = id();
+      const chestTier = chestTierForContribution(data.amountPln);
       const eventId = id();
       await env.DB.batch([
         env.DB.prepare(
@@ -670,22 +743,28 @@ async function route(context: AppContext): Promise<Response> {
           data.notes ?? null,
         ),
         env.DB.prepare(
-          `INSERT INTO progression_events(id,event_key,type,payload,occurred_at) VALUES(?,?,'CONTRIBUTION',?,?)`,
+          `INSERT INTO loot_chests(id,contribution_id,tier,status) VALUES(?,?,?,'READY')`,
+        ).bind(chestId, contributionId, chestTier),
+        env.DB.prepare(
+          `INSERT INTO progression_events(id,event_key,type,payload,occurred_at) VALUES(?,?,'CHEST_EARNED',?,?)`,
         ).bind(
           eventId,
           `contribution:${contributionId}`,
-          JSON.stringify({ contributionId }),
+          JSON.stringify({ contributionId, chestId, tier: chestTier }),
           now(),
         ),
         env.DB.prepare("UPDATE game_state SET xp=xp+100,updated_at=? WHERE id='owner'").bind(now()),
       ]);
-      return json({ id: contributionId, ...data }, 201);
+      return json({ id: contributionId, ...data, chest: { id: chestId, tier: chestTier } }, 201);
     }
   }
 
   if (resource === 'game' && method === 'GET') {
-    const [state, achievements, cosmetics, events] = await Promise.all([
-      env.DB.prepare("SELECT * FROM game_state WHERE id='owner'").first(),
+    const state = await env.DB.prepare("SELECT * FROM game_state WHERE id='owner'").first<
+      Record<string, unknown>
+    >();
+    await unlockCharacterItems(env, String(state?.peak_value_pln ?? '0'));
+    const [achievements, cosmetics, events, characterItems, chests] = await Promise.all([
       rows(
         env.DB.prepare(
           'SELECT a.*,u.unlocked_at FROM achievements a LEFT JOIN achievement_unlocks u ON u.achievement_id=a.id ORDER BY a.created_at',
@@ -701,24 +780,129 @@ async function route(context: AppContext): Promise<Response> {
           'SELECT * FROM progression_events WHERE animation_seen_at IS NULL ORDER BY occurred_at',
         ),
       ),
+      rows(
+        env.DB.prepare(
+          `SELECT i.*,u.unlocked_at,u.source AS unlock_source,e.slot AS equipped_slot
+           FROM character_items i
+           LEFT JOIN character_item_unlocks u ON u.item_id=i.id
+           LEFT JOIN character_equipment e ON e.item_id=i.id
+           ORDER BY i.sort_order,i.name`,
+        ),
+      ),
+      rows(
+        env.DB.prepare(
+          `SELECT c.*,i.name AS awarded_item_name,i.rarity AS awarded_item_rarity
+           FROM loot_chests c
+           LEFT JOIN character_items i ON i.id=c.awarded_item_id
+           ORDER BY CASE c.status WHEN 'READY' THEN 0 ELSE 1 END,c.created_at DESC`,
+        ),
+      ),
     ]);
-    return json({ state, achievements, cosmetics, pendingEvents: events });
+    return json({ state, achievements, cosmetics, characterItems, chests, pendingEvents: events });
   }
   if (resource === 'game' && resourceId === 'equip' && method === 'POST') {
     const data = z.object({ itemId: z.string().max(100) }).parse(await bodyJson(request));
     const item = await env.DB.prepare(
-      `SELECT c.* FROM cosmetic_items c JOIN cosmetic_unlocks u ON u.item_id=c.id WHERE c.id=?`,
+      `SELECT i.* FROM character_items i
+       JOIN character_item_unlocks u ON u.item_id=i.id WHERE i.id=?`,
     )
       .bind(data.itemId)
       .first<Record<string, unknown>>();
     if (!item)
       throw new HttpError(403, 'ITEM_LOCKED', 'Ten przedmiot nie został jeszcze odblokowany.');
     await env.DB.prepare(
-      `INSERT INTO equipped_items(category,item_id,equipped_at) VALUES(?,?,?) ON CONFLICT(category) DO UPDATE SET item_id=excluded.item_id,equipped_at=excluded.equipped_at`,
+      `INSERT INTO character_equipment(slot,item_id,equipped_at) VALUES(?,?,?)
+       ON CONFLICT(slot) DO UPDATE SET item_id=excluded.item_id,equipped_at=excluded.equipped_at`,
     )
-      .bind(item.category, data.itemId, now())
+      .bind(item.slot, data.itemId, now())
       .run();
-    return json({ equipped: true, itemId: data.itemId, category: item.category });
+    return json({ equipped: true, itemId: data.itemId, slot: item.slot });
+  }
+  if (resource === 'game' && resourceId === 'chests' && action && method === 'POST') {
+    const chest = await env.DB.prepare("SELECT * FROM loot_chests WHERE id=? AND status='READY'")
+      .bind(action)
+      .first<Record<string, unknown>>();
+    if (!chest) throw new HttpError(404, 'CHEST_NOT_FOUND', 'Ta skrzynka nie czeka na otwarcie.');
+
+    const lockedItems = await rows<Record<string, unknown>>(
+      env.DB.prepare(
+        `SELECT i.* FROM character_items i
+         LEFT JOIN character_item_unlocks u ON u.item_id=i.id
+         WHERE i.unlock_type='CHEST' AND u.item_id IS NULL
+         ORDER BY i.sort_order`,
+      ),
+    );
+    const rarity = rarityForChestRoll(
+      String(chest.tier) as 'WOODEN' | 'SILVER' | 'GOLD',
+      secureRandomIndex(100),
+    );
+    const item = chooseChestItem(lockedItems, rarity);
+    const timestamp = now();
+    const eventId = id();
+
+    if (!item) {
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE loot_chests SET status='OPENED',opened_at=? WHERE id=? AND status='READY'",
+        ).bind(timestamp, action),
+        env.DB.prepare("UPDATE game_state SET xp=xp+250,updated_at=? WHERE id='owner'").bind(
+          timestamp,
+        ),
+        env.DB.prepare(
+          `INSERT INTO progression_events(id,event_key,type,payload,occurred_at,animation_seen_at)
+           VALUES(?,?,'CHEST_OPENED',?,?,?)`,
+        ).bind(
+          eventId,
+          `chest-open:${action}`,
+          JSON.stringify({ chestId: action, bonusXp: 250 }),
+          timestamp,
+          timestamp,
+        ),
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO achievement_unlocks(achievement_id,unlocked_at,progression_event_id)
+           VALUES('diversified',?,?)`,
+        ).bind(timestamp, eventId),
+      ]);
+      return json({ chestId: action, item: null, bonusXp: 250 });
+    }
+
+    const itemId = String(item.id);
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE loot_chests SET status='OPENED',awarded_item_id=?,opened_at=?
+         WHERE id=? AND status='READY'`,
+      ).bind(itemId, timestamp, action),
+      env.DB.prepare(
+        `INSERT INTO character_item_unlocks(item_id,unlocked_at,source,source_ref)
+         VALUES(?,?,'CHEST',?)`,
+      ).bind(itemId, timestamp, action),
+      env.DB.prepare(
+        `INSERT INTO progression_events(id,event_key,type,payload,occurred_at,animation_seen_at)
+         VALUES(?,?,'ITEM_FOUND',?,?,?)`,
+      ).bind(
+        eventId,
+        `chest-open:${action}`,
+        JSON.stringify({ chestId: action, itemId, name: item.name, rarity: item.rarity }),
+        timestamp,
+        timestamp,
+      ),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO achievement_unlocks(achievement_id,unlocked_at,progression_event_id)
+         VALUES('diversified',?,?)`,
+      ).bind(timestamp, eventId),
+    ]);
+    return json({
+      chestId: action,
+      item: {
+        id: itemId,
+        name: item.name,
+        description: item.description,
+        slot: item.slot,
+        rarity: item.rarity,
+        visual_key: item.visual_key,
+      },
+      bonusXp: 0,
+    });
   }
   if (resource === 'game' && resourceId === 'events' && method === 'PATCH') {
     const data = z

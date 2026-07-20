@@ -72,11 +72,19 @@ export function GoalsPage() {
     },
   });
   const addContribution = useMutation({
-    mutationFn: (v: ContributionForm) => postJson('/contributions', v),
-    onSuccess: () => {
+    mutationFn: (v: ContributionForm) =>
+      postJson<{ chest: { id: string; tier: 'WOODEN' | 'SILVER' | 'GOLD' } }>('/contributions', v),
+    onSuccess: (result) => {
       void qc.invalidateQueries({ queryKey: ['contributions'] });
+      void qc.invalidateQueries({ queryKey: ['game'] });
       contributionForm.reset();
-      notify('Wpłata została zaksięgowana.');
+      const tier =
+        result.chest.tier === 'GOLD'
+          ? 'złotą'
+          : result.chest.tier === 'SILVER'
+            ? 'srebrną'
+            : 'drewnianą';
+      notify(`Wpłata zapisana — zdobywasz ${tier} skrzynkę!`);
     },
     onError: (e: Error) => notify(e.message, 'error'),
   });
@@ -100,7 +108,7 @@ export function GoalsPage() {
       <PageHeader
         eyebrow="CELE I REGULARNOŚĆ"
         title="Kapitał z intencją"
-        text="Wpłata oznacza wyłącznie nowy kapitał z zewnątrz. Sprzedaż i ponowny zakup nie tworzą XP."
+        text="Wpłata oznacza nowy kapitał z zewnątrz i daje skrzynkę dla postaci. Sprzedaż ani ponowny zakup nie tworzą nagród."
       />
       <div className="goals-grid">
         <div className="goal-list">
@@ -190,7 +198,7 @@ export function GoalsPage() {
             </label>
             <button className="button">
               <Wallet size={16} />
-              Zapisz wpłatę
+              Zapisz wpłatę i odbierz skrzynkę
             </button>
           </form>
         </Card>

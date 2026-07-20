@@ -1,3 +1,5 @@
+import { D } from './money';
+
 export type ProgressionActivity =
   | { kind: 'CONTRIBUTION'; stableId: string }
   | { kind: 'GOAL_COMPLETED'; stableId: string }
@@ -24,4 +26,34 @@ export function uniqueProgressionEvents<T extends { eventKey: string }>(
 
 export function canEquip(itemId: string, unlockedItemIds: ReadonlySet<string>): boolean {
   return unlockedItemIds.has(itemId);
+}
+
+export type ChestTier = 'WOODEN' | 'SILVER' | 'GOLD';
+export type ItemRarity = 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+
+export function chestTierForContribution(amountPln: string): ChestTier {
+  const amount = D(amountPln);
+  if (amount.gte(5_000)) return 'GOLD';
+  if (amount.gte(1_000)) return 'SILVER';
+  return 'WOODEN';
+}
+
+export function rarityForChestRoll(tier: ChestTier, roll: number): ItemRarity {
+  const normalized = Math.max(0, Math.min(99, Math.trunc(roll)));
+  if (tier === 'GOLD') {
+    if (normalized < 10) return 'COMMON';
+    if (normalized < 45) return 'RARE';
+    if (normalized < 85) return 'EPIC';
+    return 'LEGENDARY';
+  }
+  if (tier === 'SILVER') {
+    if (normalized < 30) return 'COMMON';
+    if (normalized < 75) return 'RARE';
+    if (normalized < 95) return 'EPIC';
+    return 'LEGENDARY';
+  }
+  if (normalized < 60) return 'COMMON';
+  if (normalized < 90) return 'RARE';
+  if (normalized < 99) return 'EPIC';
+  return 'LEGENDARY';
 }

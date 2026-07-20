@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { canEquip, uniqueProgressionEvents, xpForActivity } from '../../src/domain/rewards';
+import {
+  canEquip,
+  chestTierForContribution,
+  rarityForChestRoll,
+  uniqueProgressionEvents,
+  xpForActivity,
+} from '../../src/domain/rewards';
 
 describe('trwałe nagrody', () => {
   it('does not award the same event twice after recalculation', () => {
@@ -21,5 +27,19 @@ describe('trwałe nagrody', () => {
     expect(xpForActivity({ kind: 'BUY', stableId: 'buy-1' })).toBe(0);
     expect(xpForActivity({ kind: 'SELL', stableId: 'sell-1' })).toBe(0);
     expect(xpForActivity({ kind: 'CONTRIBUTION', stableId: 'contribution-1' })).toBe(100);
+  });
+
+  it('awards better chest tiers for larger external contributions', () => {
+    expect(chestTierForContribution('250')).toBe('WOODEN');
+    expect(chestTierForContribution('1000')).toBe('SILVER');
+    expect(chestTierForContribution('5000')).toBe('GOLD');
+  });
+
+  it('uses tier-specific rarity ranges', () => {
+    expect(rarityForChestRoll('WOODEN', 59)).toBe('COMMON');
+    expect(rarityForChestRoll('WOODEN', 99)).toBe('LEGENDARY');
+    expect(rarityForChestRoll('GOLD', 44)).toBe('RARE');
+    expect(rarityForChestRoll('GOLD', 84)).toBe('EPIC');
+    expect(rarityForChestRoll('GOLD', 85)).toBe('LEGENDARY');
   });
 });

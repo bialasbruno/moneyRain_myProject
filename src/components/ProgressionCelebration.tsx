@@ -36,15 +36,19 @@ export function ProgressionCelebration() {
   const title =
     event.type === 'RANK_UNLOCK'
       ? rankName
-      : event.type === 'CONTRIBUTION'
-        ? 'Kapitał zasilił Rdzeń'
-        : 'Nowe osiągnięcie';
+      : event.type === 'CHEST_EARNED'
+        ? 'Nowa skrzynka czeka!'
+        : event.type === 'ITEM_UNLOCK'
+          ? String(payload.name ?? 'Nowy przedmiot')
+          : 'Nowe osiągnięcie';
   const subtitle =
     event.type === 'RANK_UNLOCK'
       ? 'Ranga pozostaje odblokowana, nawet jeśli wycena później spadnie.'
-      : event.type === 'CONTRIBUTION'
-        ? '+100 XP za konsekwentną wpłatę zewnętrzną.'
-        : 'Osiągnięcie trafiło do Twojej gabloty.';
+      : event.type === 'CHEST_EARNED'
+        ? '+100 XP za wpłatę. Otwórz skrzynkę w garderobie bohatera.'
+        : event.type === 'ITEM_UNLOCK'
+          ? 'Wartość portfela odblokowała nowy element ekwipunku postaci.'
+          : 'Osiągnięcie trafiło do Twojej gabloty.';
   const animated = !reduced && game.data?.state.effects_level !== 'OFF';
 
   return (

@@ -1,7 +1,6 @@
 import {
   BadgeCheck,
   BarChart3,
-  Boxes,
   Goal,
   Landmark,
   Map,
@@ -9,6 +8,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  UserRound,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -20,7 +20,7 @@ const navigation = [
   { to: '/bonds', label: 'Obligacje', icon: Landmark },
   { to: '/journey', label: 'Droga', icon: Map },
   { to: '/goals', label: 'Cele', icon: Goal },
-  { to: '/vault', label: 'Skarbiec', icon: Boxes },
+  { to: '/vault', label: 'Postać', icon: UserRound },
   { to: '/achievements', label: 'Osiągnięcia', icon: BadgeCheck },
   { to: '/settings', label: 'Ustawienia', icon: Settings },
 ];
